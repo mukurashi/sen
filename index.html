@@ -2,388 +2,574 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>◎</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GHOST // NEURAL LINK</title>
 <style>
-  body {
-    margin: 0;
-    overflow: hidden;
-    background: #000;
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; inset: 0; pointer-events: none;
     font-family: 'Courier New', monospace;
-    touch-action: none;
   }
-  canvas {
-    display: block;
+  #permit {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #000; z-index: 100;
+    font-family: 'Courier New', monospace;
+    color: rgba(0,230,160,0.8); letter-spacing: 3px; gap: 16px;
   }
-  #start {
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: rgba(0, 0, 0, 0.9);
-    z-index: 10;
-    cursor: pointer;
+  #permit p { font-size: 11px; opacity: 0.5; }
+  #permit button {
+    margin-top: 8px;
+    background: transparent;
+    border: 1px solid rgba(0,230,160,0.4);
+    color: rgba(0,230,160,0.9);
+    font-family: 'Courier New', monospace;
+    font-size: 11px; letter-spacing: 3px;
+    padding: 10px 28px; cursor: pointer;
+    pointer-events: all;
+    transition: background 0.2s;
   }
-  .pulse {
-    font-size: 60px;
-    color: #0FF;
-    text-shadow: 0 0 20px #0FF;
-    animation: pulse 1.5s infinite;
+  #permit button:hover { background: rgba(0,230,160,0.08); }
+  .hud-corner {
+    position: absolute; width: 18px; height: 18px;
   }
-  @keyframes pulse {
-    0% { opacity: 0.3; transform: scale(0.9); }
-    50% { opacity: 1; transform: scale(1.1); }
-    100% { opacity: 0.3; transform: scale(0.9); }
+  .hud-corner svg { width: 18px; height: 18px; }
+  .hud-tl { top: 14px; left: 14px; }
+  .hud-tr { top: 14px; right: 14px; transform: scaleX(-1); }
+  .hud-bl { bottom: 14px; left: 14px; transform: scaleY(-1); }
+  .hud-br { bottom: 14px; right: 14px; transform: scale(-1,-1); }
+  #readout {
+    position: absolute; top: 20px; left: 40px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .rd {
+    display: flex; gap: 10px; align-items: baseline;
+    font-size: 9px; letter-spacing: 2px;
+    color: rgba(0,230,160,0.55);
+  }
+  .rd-k { color: rgba(0,230,160,0.28); min-width: 32px; }
+  .rd-bar {
+    width: 60px; height: 1px;
+    background: rgba(0,230,160,0.1);
+    position: relative; margin-top: 4px;
+  }
+  .rd-fill {
+    position: absolute; top: 0; left: 0; height: 1px;
+    background: rgba(0,230,160,0.6);
+    transition: width 0.1s;
+  }
+  #status {
+    position: absolute; bottom: 20px; right: 40px;
+    text-align: right; display: flex; flex-direction: column; gap: 4px;
+  }
+  .st { font-size: 8px; letter-spacing: 2px; color: rgba(0,230,160,0.3); }
+  #nodecount {
+    position: absolute; bottom: 20px; left: 40px;
+    font-size: 8px; letter-spacing: 2px; color: rgba(0,230,160,0.25);
   }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<div id="start">
-  <div class="pulse">◎</div>
+
+<div id="permit">
+  <div style="font-size:10px;letter-spacing:4px;">// 神経リンク確立</div>
+  <p>センサーアクセスが必要です</p>
+  <button id="btn-permit">INITIALIZE</button>
 </div>
+
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div class="hud-corner hud-tl">
+    <svg viewBox="0 0 18 18"><polyline points="18,1 1,1 1,18" fill="none" stroke="rgba(0,230,160,0.7)" stroke-width="1.2"/></svg>
+  </div>
+  <div class="hud-corner hud-tr">
+    <svg viewBox="0 0 18 18"><polyline points="18,1 1,1 1,18" fill="none" stroke="rgba(0,230,160,0.7)" stroke-width="1.2"/></svg>
+  </div>
+  <div class="hud-corner hud-bl">
+    <svg viewBox="0 0 18 18"><polyline points="18,1 1,1 1,18" fill="none" stroke="rgba(0,230,160,0.7)" stroke-width="1.2"/></svg>
+  </div>
+  <div class="hud-corner hud-br">
+    <svg viewBox="0 0 18 18"><polyline points="18,1 1,1 1,18" fill="none" stroke="rgba(0,230,160,0.7)" stroke-width="1.2"/></svg>
+  </div>
+
+  <div id="readout">
+    <div class="rd">
+      <span class="rd-k">AUD</span>
+      <span id="v-mic">0.00</span>
+      <div class="rd-bar"><div class="rd-fill" id="b-mic" style="width:0%"></div></div>
+    </div>
+    <div class="rd">
+      <span class="rd-k">ACC</span>
+      <span id="v-acc">0.00</span>
+      <div class="rd-bar"><div class="rd-fill" id="b-acc" style="width:0%"></div></div>
+    </div>
+    <div class="rd">
+      <span class="rd-k">ORI</span>
+      <span id="v-ori">0.00</span>
+      <div class="rd-bar"><div class="rd-fill" id="b-ori" style="width:0%"></div></div>
+    </div>
+    <div class="rd">
+      <span class="rd-k">FREQ</span>
+      <span id="v-freq">----</span>
+    </div>
+  </div>
+
+  <div id="status">
+    <div class="st">NEURAL-LINK // ACTIVE</div>
+    <div class="st">GHOST // DETECTED</div>
+    <div class="st" id="st-frame">FRAME // 000000</div>
+  </div>
+  <div id="nodecount" id="nc">NODE // 000</div>
+</div>
+
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let W, H;
+(function () {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
 
-// 画面サイズと解像度の調整
-function resize() {
-  const dpr = window.devicePixelRatio || 1;
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  initRain();
-}
-
-// 単語にならない1文字の集合
-const chars = "0123456789ABCDEFアイウエオカキクケコサシスセソタチツテトナニヌネノ#%&@*+-/<>¦|".split("");
-function getRandomChar() {
-  return chars[Math.floor(Math.random() * chars.length)];
-}
-
-// マトリックス風の文字雨
-let rainDrops = [];
-function initRain() {
-  const cols = Math.floor(W / 14);
-  rainDrops = [];
-  for(let i = 0; i < cols; i++) {
-    rainDrops.push({
-      x: i * 14,
-      y: Math.random() * -H,
-      speed: 1 + Math.random() * 4,
-      char: getRandomChar(),
-      brightness: Math.random() * 0.5 + 0.5
-    });
-  }
-}
-
-// センサーの変数
-let audioCtx, analyser, dataArray, freqArray;
-let micActive = false;
-let accX = 0, accY = 0, accZ = 0;
-let rotA = 0, rotB = 0, rotG = 0;
-let oriA = 0, oriB = 0, oriG = 0;
-let prevAccX = 0, prevAccY = 0, prevAccZ = 0;
-let shakeIntensity = 0;
-
-// センサー初期化（タップ起動必須）
-async function start() {
-  document.getElementById('start').style.display = 'none';
-  
-  // マイク許可
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = 0.8;
-    const source = audioCtx.createMediaStreamSource(stream);
-    source.connect(analyser);
-    dataArray = new Uint8Array(analyser.fftSize);
-    freqArray = new Uint8Array(analyser.frequencyBinCount);
-    micActive = true;
-  } catch (e) {}
-
-  // 加速度・ジャイロ許可
-  try {
-    if (typeof DeviceMotionEvent.requestPermission === 'function') {
-      await DeviceMotionEvent.requestPermission();
-    }
-    window.addEventListener('devicemotion', handleMotion);
-  } catch (e) {}
-
-  // 方位センサー許可
-  try {
-    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-      await DeviceOrientationEvent.requestPermission();
-    }
-    window.addEventListener('deviceorientation', handleOrientation);
-  } catch (e) {}
-
-  // PC環境用のフォールバック
-  window.addEventListener('mousemove', (e) => {
-    if (oriA === 0 && oriB === 0 && oriG === 0) {
-      oriG = (e.clientX / W - 0.5) * 60;
-      oriB = (e.clientY / H - 0.5) * 60;
-    }
+  let W = window.innerWidth, H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  window.addEventListener('resize', () => {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W; canvas.height = H;
+    buildGraph();
   });
 
-  resize();
-  animate();
-}
+  // ─── Sensor state ──────────────────────────────────────────
+  const S = {
+    mic: 0, micSmooth: 0,
+    ax: 0, ay: 0, az: 9.8,
+    alpha: 0, beta: 0, gamma: 0,
+    freqBands: new Float32Array(8),   // 8 frequency bands 0..1
+    beat: false, beatAge: 0,
+    simT: 0,
+    hasMic: false, hasMotion: false,
+    frame: 0
+  };
 
-function handleMotion(e) {
-  if (e.accelerationIncludingGravity) {
-    prevAccX = accX; prevAccY = accY; prevAccZ = accZ;
-    accX = e.accelerationIncludingGravity.x || 0;
-    accY = e.accelerationIncludingGravity.y || 0;
-    accZ = e.accelerationIncludingGravity.z || 0;
-    
-    const delta = Math.abs(accX - prevAccX) + Math.abs(accY - prevAccY) + Math.abs(accZ - prevAccZ);
-    shakeIntensity = Math.max(shakeIntensity, delta * 0.1);
+  // ─── Graph ─────────────────────────────────────────────────
+  const NODE_COUNT = 60;
+  let nodes = [], edges = [];
+
+  function buildGraph() {
+    nodes = [];
+    edges = [];
+
+    // Place nodes in a loose clustered layout
+    const clusters = [
+      { cx: W * 0.25, cy: H * 0.35, r: Math.min(W, H) * 0.18, n: 14 },
+      { cx: W * 0.75, cy: H * 0.30, r: Math.min(W, H) * 0.15, n: 12 },
+      { cx: W * 0.50, cy: H * 0.62, r: Math.min(W, H) * 0.20, n: 16 },
+      { cx: W * 0.20, cy: H * 0.72, r: Math.min(W, H) * 0.12, n: 9 },
+      { cx: W * 0.80, cy: H * 0.70, r: Math.min(W, H) * 0.13, n: 9 },
+    ];
+
+    clusters.forEach(cl => {
+      for (let i = 0; i < cl.n; i++) {
+        const ang = (i / cl.n) * Math.PI * 2 + Math.random() * 0.5;
+        const dist = cl.r * (0.3 + Math.random() * 0.7);
+        nodes.push({
+          x: cl.cx + Math.cos(ang) * dist,
+          y: cl.cy + Math.sin(ang) * dist,
+          bx: 0, by: 0,          // base position set below
+          vx: 0, vy: 0,
+          r: 1.5 + Math.random() * 2.5,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.008 + Math.random() * 0.012,
+          cluster: clusters.indexOf(cl),
+          active: false,
+          activationAge: 0,
+          activationMax: 0,
+          bandIndex: Math.floor(Math.random() * 8),
+        });
+      }
+    });
+
+    // Record base positions
+    nodes.forEach(n => { n.bx = n.x; n.by = n.y; });
+
+    // Build edges: nearby nodes + cross-cluster bridges
+    const maxDist = Math.min(W, H) * 0.22;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].bx - nodes[j].bx;
+        const dy = nodes[i].by - nodes[j].by;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < maxDist) {
+          // Higher prob for same cluster
+          const prob = nodes[i].cluster === nodes[j].cluster ? 0.55 : 0.12;
+          if (Math.random() < prob) {
+            edges.push({ a: i, b: j, signal: 0, signalPos: 0 });
+          }
+        }
+      }
+    }
+
+    document.getElementById('nodecount').textContent =
+      'NODE // ' + nodes.length.toString().padStart(3, '0') +
+      '  EDGE // ' + edges.length.toString().padStart(3, '0');
   }
-  if (e.rotationRate) {
-    rotA = e.rotationRate.alpha || 0;
-    rotB = e.rotationRate.beta || 0;
-    rotG = e.rotationRate.gamma || 0;
+
+  buildGraph();
+
+  // ─── Physics / animation ──────────────────────────────────
+  let frameCount = 0;
+
+  function updateNodes() {
+    const t = frameCount;
+
+    // Tilt: map ax/ay to a global drift
+    const tiltX = S.ax * 0.8;
+    const tiltY = S.ay * 0.8;
+
+    // Orientation ripple: gamma -> wave across nodes
+    const waveMag = Math.abs(S.gamma) / 45 * 12;
+    const waveFreq = 0.04 + Math.abs(S.beta) / 180 * 0.06;
+
+    nodes.forEach((n, i) => {
+      // Idle drift (Lissajous-ish)
+      const idleX = Math.sin(t * n.speed + n.phase) * 6;
+      const idleY = Math.cos(t * n.speed * 0.7 + n.phase) * 5;
+
+      // Audio: each node listens to its frequency band
+      const bandVal = S.freqBands[n.bandIndex];
+      const audioDisp = bandVal * 28;
+      const audioAngle = n.phase + t * 0.02;
+
+      // Beat: radial push from nearest cluster center
+      let beatX = 0, beatY = 0;
+      if (S.beat) {
+        const cx = [W*0.25, W*0.75, W*0.5, W*0.2, W*0.8][n.cluster];
+        const cy = [H*0.35, H*0.30, H*0.62, H*0.72, H*0.70][n.cluster];
+        const dx = n.bx - cx, dy = n.by - cy;
+        const d = Math.sqrt(dx*dx+dy*dy)+1;
+        beatX = (dx/d) * 18;
+        beatY = (dy/d) * 18;
+      }
+
+      // Wave from orientation
+      const wavePhase = n.bx / W * Math.PI * 4 + t * waveFreq;
+      const waveY = Math.sin(wavePhase) * waveMag;
+
+      // Mic smooth: pulsates all nodes outward from base
+      const micPulse = S.micSmooth * 14;
+      const pDir = n.phase;
+
+      // Target position
+      const tx = n.bx + idleX + tiltX + Math.cos(audioAngle)*audioDisp + Math.cos(pDir)*micPulse + beatX;
+      const ty = n.by + idleY + tiltY + Math.sin(audioAngle)*audioDisp + waveY + Math.sin(pDir)*micPulse + beatY;
+
+      // Spring toward target
+      n.vx += (tx - n.x) * 0.06;
+      n.vy += (ty - n.y) * 0.06;
+      n.vx *= 0.82;
+      n.vy *= 0.82;
+      n.x += n.vx;
+      n.y += n.vy;
+
+      // Node activation by band energy
+      if (bandVal > 0.6 && Math.random() < 0.04) {
+        n.active = true;
+        n.activationAge = 0;
+        n.activationMax = 25 + Math.floor(Math.random() * 20);
+      }
+      if (n.active) {
+        n.activationAge++;
+        if (n.activationAge > n.activationMax) n.active = false;
+      }
+    });
+
+    // Edge signal propagation
+    edges.forEach(e => {
+      if (e.signal > 0) {
+        e.signalPos += 0.04 + S.micSmooth * 0.03;
+        if (e.signalPos >= 1) { e.signal = 0; e.signalPos = 0; }
+      } else if (nodes[e.a].active && Math.random() < 0.03) {
+        e.signal = 1; e.signalPos = 0;
+      }
+    });
   }
-}
 
-function handleOrientation(e) {
-  oriA = e.alpha || 0;
-  oriB = e.beta || 0;
-  oriG = e.gamma || 0;
-}
+  // ─── Render ────────────────────────────────────────────────
+  function render() {
+    ctx.clearRect(0, 0, W, H);
 
-function animate() {
-  // 残像効果
-  ctx.fillStyle = 'rgba(2, 5, 8, 0.2)';
-  ctx.fillRect(0, 0, W, H);
+    // Background: very dark, slight teal tint
+    ctx.fillStyle = '#000507';
+    ctx.fillRect(0, 0, W, H);
 
-  // 音声解析
-  let vol = 0, bass = 0, treble = 0;
-  if (micActive) {
-    analyser.getByteTimeDomainData(dataArray);
-    analyser.getByteFrequencyData(freqArray);
-    for(let i = 0; i < freqArray.length; i++) vol += freqArray[i];
-    vol /= freqArray.length;
-    for(let i = 0; i < 10; i++) bass += freqArray[i];
-    bass /= 10;
-    for(let i = freqArray.length - 20; i < freqArray.length; i++) treble += freqArray[i];
-    treble /= 20;
+    // Faint scan-line overlay every 3 px
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    for (let y = 0; y < H; y += 3) {
+      ctx.fillRect(0, y, W, 1);
+    }
+
+    drawEdges();
+    drawNodes();
   }
 
-  // シェイクと視差効果
-  shakeIntensity *= 0.9;
-  const shakeX = (Math.random() - 0.5) * shakeIntensity;
-  const shakeY = (Math.random() - 0.5) * shakeIntensity;
-  const px = oriG * 0.5 + shakeX;
-  const py = oriB * 0.5 + shakeY;
+  function drawEdges() {
+    edges.forEach(e => {
+      const na = nodes[e.a], nb = nodes[e.b];
+      const dx = nb.x - na.x, dy = nb.y - na.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
 
-  // 背景の3Dグリッド描画
-  drawGrid(px, py);
+      // Base edge
+      const alpha = Math.max(0, 0.12 - dist / (Math.min(W,H) * 2));
+      if (alpha < 0.005) return;
 
-  // 文字雨の描画
-  ctx.font = '14px "Courier New", monospace';
-  for(let i = 0; i < rainDrops.length; i++) {
-    const drop = rainDrops[i];
-    drop.y += drop.speed * (1 + vol * 0.2);
-    if (Math.random() > 0.95) drop.char = getRandomChar();
-    
-    const alpha = drop.brightness * (0.5 + vol * 0.01);
-    ctx.fillStyle = `rgba(0, 255, 100, ${alpha})`;
-    ctx.fillText(drop.char, drop.x + px, drop.y + py);
-    
-    if (drop.y > H + 20) {
-      drop.y = -20;
-      drop.speed = 1 + Math.random() * 4;
+      ctx.strokeStyle = `rgba(0,220,150,${alpha})`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(na.x, na.y);
+      ctx.lineTo(nb.x, nb.y);
+      ctx.stroke();
+
+      // Active glow edge
+      if (na.active || nb.active) {
+        const gAlpha = 0.18 + (na.active ? na.activationAge / na.activationMax * 0.2 : 0);
+        ctx.strokeStyle = `rgba(0,240,160,${gAlpha})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(na.x, na.y);
+        ctx.lineTo(nb.x, nb.y);
+        ctx.stroke();
+      }
+
+      // Signal pulse traveling along edge
+      if (e.signal > 0) {
+        const px = na.x + dx * e.signalPos;
+        const py = na.y + dy * e.signalPos;
+
+        // Trail
+        const trailLen = 0.12;
+        const t0 = Math.max(0, e.signalPos - trailLen);
+        const tx0 = na.x + dx * t0, ty0 = na.y + dy * t0;
+        const grad = ctx.createLinearGradient(tx0, ty0, px, py);
+        grad.addColorStop(0, 'rgba(0,255,180,0)');
+        grad.addColorStop(1, 'rgba(0,255,180,0.7)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(tx0, ty0);
+        ctx.lineTo(px, py);
+        ctx.stroke();
+
+        // Head dot
+        ctx.fillStyle = 'rgba(0,255,200,0.9)';
+        ctx.beginPath();
+        ctx.arc(px, py, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  function drawNodes() {
+    nodes.forEach(n => {
+      const bandVal = S.freqBands[n.bandIndex];
+      const r = n.r + bandVal * 3 + S.micSmooth * 2;
+
+      if (n.active) {
+        // Outer glow ring
+        const progress = n.activationAge / n.activationMax;
+        const glowR = r + progress * 14;
+        ctx.strokeStyle = `rgba(0,255,180,${0.3 * (1 - progress)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner bright core
+        ctx.fillStyle = `rgba(160,255,220,0.95)`;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Outer node
+        ctx.fillStyle = `rgba(0,255,180,0.45)`;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Idle node
+        const brightness = 0.35 + bandVal * 0.35;
+        ctx.fillStyle = `rgba(0,200,140,${brightness})`;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Center dot
+        ctx.fillStyle = `rgba(180,255,220,${brightness * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ─── HUD update ──────────────────────────────────────────
+  function updateHUD() {
+    const mag = Math.sqrt(S.ax*S.ax + S.ay*S.ay + S.az*S.az);
+    const oriNorm = (Math.abs(S.beta) + Math.abs(S.gamma)) / 90;
+    const domFreq = S.freqBands.reduce((bi, v, i, a) => v > a[bi] ? i : bi, 0);
+    const freqLabels = ['SUB','BSS','LMD','MID','HMD','PRS','HGH','AIR'];
+
+    document.getElementById('v-mic').textContent = S.micSmooth.toFixed(2);
+    document.getElementById('b-mic').style.width = Math.min(100, S.micSmooth * 200) + '%';
+    document.getElementById('v-acc').textContent = mag.toFixed(2);
+    document.getElementById('b-acc').style.width = Math.min(100, (mag / 20) * 100) + '%';
+    document.getElementById('v-ori').textContent = oriNorm.toFixed(2);
+    document.getElementById('b-ori').style.width = Math.min(100, oriNorm * 100) + '%';
+    document.getElementById('v-freq').textContent = freqLabels[domFreq];
+    document.getElementById('st-frame').textContent =
+      'FRAME // ' + frameCount.toString().padStart(6, '0');
+  }
+
+  // ─── Main loop ────────────────────────────────────────────
+  function loop() {
+    frameCount++;
+    S.frame = frameCount;
+    S.beat = false;
+    S.beatAge++;
+    updateNodes();
+    render();
+    updateHUD();
+    requestAnimationFrame(loop);
+  }
+
+  // ─── Simulation fallback ─────────────────────────────────
+  function startSim() {
+    let simT = 0;
+    setInterval(() => {
+      simT += 0.025;
+      if (!S.hasMic) {
+        // Synthesized audio energy
+        for (let i = 0; i < 8; i++) {
+          const f = Math.sin(simT * (0.3 + i * 0.17) + i) * 0.5 + 0.5;
+          S.freqBands[i] = S.freqBands[i] * 0.7 + f * 0.3;
+        }
+        S.mic = Math.abs(Math.sin(simT * 1.1) * 0.4 + Math.sin(simT * 2.3) * 0.2 + Math.random() * 0.1);
+        S.micSmooth = S.micSmooth * 0.85 + S.mic * 0.15;
+
+        // Simulated beat
+        if (Math.sin(simT * 1.8) > 0.92) {
+          S.beat = true; S.beatAge = 0;
+        }
+      }
+      if (!S.hasMotion) {
+        S.ax = Math.sin(simT * 0.4) * 1.2;
+        S.ay = Math.cos(simT * 0.3) * 0.8;
+        S.az = 9.8 + Math.sin(simT * 0.7) * 0.5;
+        S.alpha = (simT * 15) % 360;
+        S.beta = Math.sin(simT * 0.25) * 20;
+        S.gamma = Math.cos(simT * 0.35) * 12;
+      }
+    }, 30);
+  }
+
+  // ─── Mic init ─────────────────────────────────────────────
+  async function initMic() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const ac = new AudioContext();
+      const src = ac.createMediaStreamSource(stream);
+      const an = ac.createAnalyser();
+      an.fftSize = 1024;
+      an.smoothingTimeConstant = 0.8;
+      src.connect(an);
+
+      const fBuf = new Uint8Array(an.frequencyBinCount);
+      const wBuf = new Uint8Array(an.fftSize);
+      S.hasMic = true;
+
+      // Beat detection
+      let energy = 0, energyHistory = new Array(30).fill(0), histIdx = 0;
+
+      function pull() {
+        an.getByteFrequencyData(fBuf);
+        an.getByteTimeDomainData(wBuf);
+
+        // Map to 8 bands
+        const binPerBand = Math.floor(fBuf.length / 8);
+        for (let i = 0; i < 8; i++) {
+          let sum = 0;
+          for (let j = 0; j < binPerBand; j++) sum += fBuf[i * binPerBand + j];
+          S.freqBands[i] = (sum / binPerBand) / 255;
+        }
+
+        // RMS
+        let rms = 0;
+        for (let i = 0; i < wBuf.length; i++) { const v = (wBuf[i]-128)/128; rms += v*v; }
+        S.mic = Math.sqrt(rms / wBuf.length);
+        S.micSmooth = S.micSmooth * 0.8 + S.mic * 0.2;
+
+        // Beat: compare current low-freq energy to avg history
+        const lowEnergy = S.freqBands[0] + S.freqBands[1];
+        const avgE = energyHistory.reduce((a,b)=>a+b,0) / energyHistory.length;
+        if (lowEnergy > avgE * 1.5 && lowEnergy > 0.3 && S.beatAge > 15) {
+          S.beat = true; S.beatAge = 0;
+        }
+        energyHistory[histIdx % 30] = lowEnergy;
+        histIdx++;
+
+        requestAnimationFrame(pull);
+      }
+      pull();
+    } catch (e) {
+      console.warn('Mic unavailable, using simulation');
     }
   }
 
-  // 中央のHUDシステム
-  const cx = W / 2;
-  const cy = H / 2;
-  ctx.save();
-  ctx.translate(cx + px, cy + py);
-  ctx.rotate(oriA * Math.PI / 180 * 0.5);
-
-  // ターゲティング十字線（加速度でズレる）
-  ctx.strokeStyle = `rgba(255, 0, 0, ${0.5 + shakeIntensity * 0.05})`;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(-200 - accX * 5, 0); ctx.lineTo(-50, 0);
-  ctx.moveTo(50, 0); ctx.lineTo(200 - accX * 5, 0);
-  ctx.moveTo(0, -200 + accY * 5); ctx.lineTo(0, -50);
-  ctx.moveTo(0, 50); ctx.lineTo(0, 200 + accY * 5);
-  ctx.stroke();
-
-  // 同心円の描画
-  ctx.strokeStyle = `rgba(0, 255, 255, 0.3)`;
-  for(let i = 0; i < 3; i++) {
-    ctx.beginPath();
-    ctx.arc(0, 0, 140 + i * 30 + Math.sin(Date.now() / 1000 + i) * 5, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  
-  // 音量反応のメインサークル
-  ctx.strokeStyle = `rgba(0, 255, 0, 0.8)`;
-  ctx.beginPath();
-  ctx.arc(0, 0, 120 + vol * 0.5, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // 周波数スペクトラム（円形）
-  if (freqArray) {
-    const points = freqArray.length;
-    ctx.strokeStyle = '#00FF00';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for(let i = 0; i < points; i++) {
-      const angle = (i / points) * Math.PI * 2;
-      const r = 50 + freqArray[i] * 0.4;
-      const x = Math.cos(angle) * r;
-      const y = Math.sin(angle) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+  // ─── Motion init ─────────────────────────────────────────
+  function initMotion() {
+    function onMotion(e) {
+      if (!e.acceleration) return;
+      S.hasMotion = true;
+      S.ax = (e.acceleration.x || 0);
+      S.ay = (e.acceleration.y || 0);
+      S.az = (e.acceleration.z || 0);
     }
-    ctx.closePath();
-    ctx.stroke();
-  }
-
-  // 波形データ（内側の円形波）
-  if (dataArray) {
-    ctx.strokeStyle = `rgba(0, 255, 255, 0.8)`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for(let i = 0; i < dataArray.length; i++) {
-      const angle = (i / dataArray.length) * Math.PI * 2;
-      const r = 30 + (dataArray[i] - 128) * 0.3;
-      const x = Math.cos(angle) * r;
-      const y = Math.sin(angle) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+    function onOri(e) {
+      S.alpha = e.alpha || 0;
+      S.beta  = e.beta  || 0;
+      S.gamma = e.gamma || 0;
     }
-    ctx.closePath();
-    ctx.stroke();
-  }
 
-  // 中心のコア
-  ctx.fillStyle = '#FF0000';
-  ctx.beginPath();
-  ctx.arc(0, 0, 3 + bass * 0.05, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
-
-  // 四隅のHUDフレーム
-  drawCorners(px, py);
-
-  // HUD上のランダム文字
-  ctx.fillStyle = `rgba(0, 255, 255, 0.8)`;
-  ctx.font = '10px "Courier New", monospace';
-  for(let i = 0; i < 15; i++) {
-    ctx.fillText(getRandomChar(), Math.random() * W, Math.random() * H);
-  }
-  
-  // シェイク時の赤文字ノイズ
-  if (shakeIntensity > 2) {
-    ctx.fillStyle = `rgba(255, 0, 0, 0.9)`;
-    for(let i = 0; i < 20; i++) {
-      ctx.fillText(getRandomChar(), Math.random() * W, Math.random() * H);
+    if ('DeviceMotionEvent' in window) {
+      if (typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission()
+          .then(r => { if (r === 'granted') window.addEventListener('devicemotion', onMotion); })
+          .catch(() => {});
+      } else {
+        window.addEventListener('devicemotion', onMotion);
+      }
+    }
+    if ('DeviceOrientationEvent' in window) {
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then(r => { if (r === 'granted') window.addEventListener('deviceorientation', onOri); })
+          .catch(() => {});
+      } else {
+        window.addEventListener('deviceorientation', onOri);
+      }
     }
   }
 
-  // グリッチブロック（シェイクまたは大音量時）
-  if (shakeIntensity > 1.5 || vol > 100) {
-    for(let i = 0; i < 5; i++) {
-      const gx = Math.random() * W;
-      const gy = Math.random() * H;
-      const gw = 50 + Math.random() * 200;
-      const gh = 2 + Math.random() * 10;
-      
-      ctx.fillStyle = `rgba(255, 0, 0, ${Math.random() * 0.4})`;
-      ctx.fillRect(gx + px, gy + py, gw, gh);
-      ctx.fillStyle = `rgba(0, 255, 255, ${Math.random() * 0.4})`;
-      ctx.fillRect(gx + 5 + px, gy + py, gw, gh);
-    }
-  }
+  // ─── Boot ─────────────────────────────────────────────────
+  document.getElementById('btn-permit').addEventListener('click', async () => {
+    document.getElementById('permit').style.display = 'none';
+    await initMic();
+    initMotion();
+  });
 
-  // スキャンライン
-  const scanY = (Date.now() / 8) % H;
-  ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
-  ctx.fillRect(0, scanY, W, 3);
+  startSim();
+  loop();
 
-  requestAnimationFrame(animate);
-}
-
-// パースペクティブグリッドの描画
-function drawGrid(px, py) {
-  const horizon = H * 0.5;
-  ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
-  ctx.lineWidth = 1;
-  
-  const vpX = W / 2 + (oriG * 2) + px;
-  const vpY = horizon + (oriB * 2) + py;
-  
-  // 縦線
-  const numV = 20;
-  for(let i = -numV; i <= numV; i++) {
-    ctx.beginPath();
-    ctx.moveTo(vpX, vpY);
-    ctx.lineTo(vpX + i * (W / numV) * 2, H);
-    ctx.stroke();
-  }
-  
-  // 横線
-  const offset = (Date.now() / 40) % 50;
-  for(let i = 0; i < 15; i++) {
-    const t = (i + offset / 50) / 15;
-    const y = vpY + Math.pow(t, 2) * (H - vpY) * 1.5;
-    if (y > H || y < vpY) continue;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  }
-}
-
-// 四隅のHUD装飾
-function drawCorners(px, py) {
-  ctx.strokeStyle = '#00FFFF';
-  ctx.lineWidth = 2;
-  const len = 40;
-  const m = 30;
-  
-  ctx.beginPath();
-  ctx.moveTo(m + px, m + len + py); ctx.lineTo(m + px, m + py); ctx.lineTo(m + len + px, m + py);
-  ctx.moveTo(W - m - len + px, m + py); ctx.lineTo(W - m + px, m + py); ctx.lineTo(W - m + px, m + len + py);
-  ctx.moveTo(m + px, H - m - len + py); ctx.lineTo(m + px, H - m + py); ctx.lineTo(m + len + px, H - m + py);
-  ctx.moveTo(W - m - len + px, H - m + py); ctx.lineTo(W - m + px, H - m + py); ctx.lineTo(W - m + px, H - m - len + py);
-  ctx.stroke();
-  
-  // 四隅にランダムな1文字を表示
-  ctx.fillStyle = '#00FF00';
-  ctx.font = '12px "Courier New", monospace';
-  ctx.fillText(getRandomChar(), m + 5 + px, m + 20 + py);
-  ctx.fillText(getRandomChar(), W - m - 15 + px, m + 20 + py);
-  ctx.fillText(getRandomChar(), m + 5 + px, H - m - 10 + py);
-  ctx.fillText(getRandomChar(), W - m - 15 + px, H - m - 10 + py);
-  
-  // 中心上部のターゲットマーク
-  ctx.fillStyle = `rgba(255, 0, 0, ${0.5 + Math.sin(Date.now()/200)*0.5})`;
-  ctx.font = '16px "Courier New", monospace';
-  ctx.fillText(getRandomChar(), W/2 - 30 + px, 40 + py);
-  ctx.fillText(getRandomChar(), W/2 + px, 40 + py);
-  ctx.fillText(getRandomChar(), W/2 + 30 + px, 40 + py);
-}
-
-document.getElementById('start').addEventListener('click', start);
-window.addEventListener('resize', resize);
+})();
 </script>
 </body>
 </html>
