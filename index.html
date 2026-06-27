@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>◎</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Courier New', monospace;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+  }
+  #start {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 10;
+    cursor: pointer;
+  }
+  .pulse {
+    font-size: 60px;
+    color: #0FF;
+    text-shadow: 0 0 20px #0FF;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0% { opacity: 0.3; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 0.3; transform: scale(0.9); }
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="start">
+  <div class="pulse">◎</div>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+// 画面サイズと解像度の調整
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  initRain();
+}
+
+// 単語にならない1文字の集合
+const chars = "0123456789ABCDEFアイウエオカキクケコサシスセソタチツテトナニヌネノ#%&@*+-/<>¦|".split("");
+function getRandomChar() {
+  return chars[Math.floor(Math.random() * chars.length)];
+}
+
+// マトリックス風の文字雨
+let rainDrops = [];
+function initRain() {
+  const cols = Math.floor(W / 14);
+  rainDrops = [];
+  for(let i = 0; i < cols; i++) {
+    rainDrops.push({
+      x: i * 14,
+      y: Math.random() * -H,
+      speed: 1 + Math.random() * 4,
+      char: getRandomChar(),
+      brightness: Math.random() * 0.5 + 0.5
+    });
+  }
+}
+
+// センサーの変数
+let audioCtx, analyser, dataArray, freqArray;
+let micActive = false;
+let accX = 0, accY = 0, accZ = 0;
+let rotA = 0, rotB = 0, rotG = 0;
+let oriA = 0, oriB = 0, oriG = 0;
+let prevAccX = 0, prevAccY = 0, prevAccZ = 0;
+let shakeIntensity = 0;
+
+// センサー初期化（タップ起動必須）
+async function start() {
+  document.getElementById('start').style.display = 'none';
+  
+  // マイク許可
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.8;
+    const source = audioCtx.createMediaStreamSource(stream);
+    source.connect(analyser);
+    dataArray = new Uint8Array(analyser.fftSize);
+    freqArray = new Uint8Array(analyser.frequencyBinCount);
+    micActive = true;
+  } catch (e) {}
+
+  // 加速度・ジャイロ許可
+  try {
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      await DeviceMotionEvent.requestPermission();
+    }
+    window.addEventListener('devicemotion', handleMotion);
+  } catch (e) {}
+
+  // 方位センサー許可
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      await DeviceOrientationEvent.requestPermission();
+    }
+    window.addEventListener('deviceorientation', handleOrientation);
+  } catch (e) {}
+
+  // PC環境用のフォールバック
+  window.addEventListener('mousemove', (e) => {
+    if (oriA === 0 && oriB === 0 && oriG === 0) {
+      oriG = (e.clientX / W - 0.5) * 60;
+      oriB = (e.clientY / H - 0.5) * 60;
+    }
+  });
+
+  resize();
+  animate();
+}
+
+function handleMotion(e) {
+  if (e.accelerationIncludingGravity) {
+    prevAccX = accX; prevAccY = accY; prevAccZ = accZ;
+    accX = e.accelerationIncludingGravity.x || 0;
+    accY = e.accelerationIncludingGravity.y || 0;
+    accZ = e.accelerationIncludingGravity.z || 0;
+    
+    const delta = Math.abs(accX - prevAccX) + Math.abs(accY - prevAccY) + Math.abs(accZ - prevAccZ);
+    shakeIntensity = Math.max(shakeIntensity, delta * 0.1);
+  }
+  if (e.rotationRate) {
+    rotA = e.rotationRate.alpha || 0;
+    rotB = e.rotationRate.beta || 0;
+    rotG = e.rotationRate.gamma || 0;
+  }
+}
+
+function handleOrientation(e) {
+  oriA = e.alpha || 0;
+  oriB = e.beta || 0;
+  oriG = e.gamma || 0;
+}
+
+function animate() {
+  // 残像効果
+  ctx.fillStyle = 'rgba(2, 5, 8, 0.2)';
+  ctx.fillRect(0, 0, W, H);
+
+  // 音声解析
+  let vol = 0, bass = 0, treble = 0;
+  if (micActive) {
+    analyser.getByteTimeDomainData(dataArray);
+    analyser.getByteFrequencyData(freqArray);
+    for(let i = 0; i < freqArray.length; i++) vol += freqArray[i];
+    vol /= freqArray.length;
+    for(let i = 0; i < 10; i++) bass += freqArray[i];
+    bass /= 10;
+    for(let i = freqArray.length - 20; i < freqArray.length; i++) treble += freqArray[i];
+    treble /= 20;
+  }
+
+  // シェイクと視差効果
+  shakeIntensity *= 0.9;
+  const shakeX = (Math.random() - 0.5) * shakeIntensity;
+  const shakeY = (Math.random() - 0.5) * shakeIntensity;
+  const px = oriG * 0.5 + shakeX;
+  const py = oriB * 0.5 + shakeY;
+
+  // 背景の3Dグリッド描画
+  drawGrid(px, py);
+
+  // 文字雨の描画
+  ctx.font = '14px "Courier New", monospace';
+  for(let i = 0; i < rainDrops.length; i++) {
+    const drop = rainDrops[i];
+    drop.y += drop.speed * (1 + vol * 0.2);
+    if (Math.random() > 0.95) drop.char = getRandomChar();
+    
+    const alpha = drop.brightness * (0.5 + vol * 0.01);
+    ctx.fillStyle = `rgba(0, 255, 100, ${alpha})`;
+    ctx.fillText(drop.char, drop.x + px, drop.y + py);
+    
+    if (drop.y > H + 20) {
+      drop.y = -20;
+      drop.speed = 1 + Math.random() * 4;
+    }
+  }
+
+  // 中央のHUDシステム
+  const cx = W / 2;
+  const cy = H / 2;
+  ctx.save();
+  ctx.translate(cx + px, cy + py);
+  ctx.rotate(oriA * Math.PI / 180 * 0.5);
+
+  // ターゲティング十字線（加速度でズレる）
+  ctx.strokeStyle = `rgba(255, 0, 0, ${0.5 + shakeIntensity * 0.05})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-200 - accX * 5, 0); ctx.lineTo(-50, 0);
+  ctx.moveTo(50, 0); ctx.lineTo(200 - accX * 5, 0);
+  ctx.moveTo(0, -200 + accY * 5); ctx.lineTo(0, -50);
+  ctx.moveTo(0, 50); ctx.lineTo(0, 200 + accY * 5);
+  ctx.stroke();
+
+  // 同心円の描画
+  ctx.strokeStyle = `rgba(0, 255, 255, 0.3)`;
+  for(let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 140 + i * 30 + Math.sin(Date.now() / 1000 + i) * 5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  
+  // 音量反応のメインサークル
+  ctx.strokeStyle = `rgba(0, 255, 0, 0.8)`;
+  ctx.beginPath();
+  ctx.arc(0, 0, 120 + vol * 0.5, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 周波数スペクトラム（円形）
+  if (freqArray) {
+    const points = freqArray.length;
+    ctx.strokeStyle = '#00FF00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for(let i = 0; i < points; i++) {
+      const angle = (i / points) * Math.PI * 2;
+      const r = 50 + freqArray[i] * 0.4;
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // 波形データ（内側の円形波）
+  if (dataArray) {
+    ctx.strokeStyle = `rgba(0, 255, 255, 0.8)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i = 0; i < dataArray.length; i++) {
+      const angle = (i / dataArray.length) * Math.PI * 2;
+      const r = 30 + (dataArray[i] - 128) * 0.3;
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // 中心のコア
+  ctx.fillStyle = '#FF0000';
+  ctx.beginPath();
+  ctx.arc(0, 0, 3 + bass * 0.05, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // 四隅のHUDフレーム
+  drawCorners(px, py);
+
+  // HUD上のランダム文字
+  ctx.fillStyle = `rgba(0, 255, 255, 0.8)`;
+  ctx.font = '10px "Courier New", monospace';
+  for(let i = 0; i < 15; i++) {
+    ctx.fillText(getRandomChar(), Math.random() * W, Math.random() * H);
+  }
+  
+  // シェイク時の赤文字ノイズ
+  if (shakeIntensity > 2) {
+    ctx.fillStyle = `rgba(255, 0, 0, 0.9)`;
+    for(let i = 0; i < 20; i++) {
+      ctx.fillText(getRandomChar(), Math.random() * W, Math.random() * H);
+    }
+  }
+
+  // グリッチブロック（シェイクまたは大音量時）
+  if (shakeIntensity > 1.5 || vol > 100) {
+    for(let i = 0; i < 5; i++) {
+      const gx = Math.random() * W;
+      const gy = Math.random() * H;
+      const gw = 50 + Math.random() * 200;
+      const gh = 2 + Math.random() * 10;
+      
+      ctx.fillStyle = `rgba(255, 0, 0, ${Math.random() * 0.4})`;
+      ctx.fillRect(gx + px, gy + py, gw, gh);
+      ctx.fillStyle = `rgba(0, 255, 255, ${Math.random() * 0.4})`;
+      ctx.fillRect(gx + 5 + px, gy + py, gw, gh);
+    }
+  }
+
+  // スキャンライン
+  const scanY = (Date.now() / 8) % H;
+  ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
+  ctx.fillRect(0, scanY, W, 3);
+
+  requestAnimationFrame(animate);
+}
+
+// パースペクティブグリッドの描画
+function drawGrid(px, py) {
+  const horizon = H * 0.5;
+  ctx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+  ctx.lineWidth = 1;
+  
+  const vpX = W / 2 + (oriG * 2) + px;
+  const vpY = horizon + (oriB * 2) + py;
+  
+  // 縦線
+  const numV = 20;
+  for(let i = -numV; i <= numV; i++) {
+    ctx.beginPath();
+    ctx.moveTo(vpX, vpY);
+    ctx.lineTo(vpX + i * (W / numV) * 2, H);
+    ctx.stroke();
+  }
+  
+  // 横線
+  const offset = (Date.now() / 40) % 50;
+  for(let i = 0; i < 15; i++) {
+    const t = (i + offset / 50) / 15;
+    const y = vpY + Math.pow(t, 2) * (H - vpY) * 1.5;
+    if (y > H || y < vpY) continue;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+}
+
+// 四隅のHUD装飾
+function drawCorners(px, py) {
+  ctx.strokeStyle = '#00FFFF';
+  ctx.lineWidth = 2;
+  const len = 40;
+  const m = 30;
+  
+  ctx.beginPath();
+  ctx.moveTo(m + px, m + len + py); ctx.lineTo(m + px, m + py); ctx.lineTo(m + len + px, m + py);
+  ctx.moveTo(W - m - len + px, m + py); ctx.lineTo(W - m + px, m + py); ctx.lineTo(W - m + px, m + len + py);
+  ctx.moveTo(m + px, H - m - len + py); ctx.lineTo(m + px, H - m + py); ctx.lineTo(m + len + px, H - m + py);
+  ctx.moveTo(W - m - len + px, H - m + py); ctx.lineTo(W - m + px, H - m + py); ctx.lineTo(W - m + px, H - m - len + py);
+  ctx.stroke();
+  
+  // 四隅にランダムな1文字を表示
+  ctx.fillStyle = '#00FF00';
+  ctx.font = '12px "Courier New", monospace';
+  ctx.fillText(getRandomChar(), m + 5 + px, m + 20 + py);
+  ctx.fillText(getRandomChar(), W - m - 15 + px, m + 20 + py);
+  ctx.fillText(getRandomChar(), m + 5 + px, H - m - 10 + py);
+  ctx.fillText(getRandomChar(), W - m - 15 + px, H - m - 10 + py);
+  
+  // 中心上部のターゲットマーク
+  ctx.fillStyle = `rgba(255, 0, 0, ${0.5 + Math.sin(Date.now()/200)*0.5})`;
+  ctx.font = '16px "Courier New", monospace';
+  ctx.fillText(getRandomChar(), W/2 - 30 + px, 40 + py);
+  ctx.fillText(getRandomChar(), W/2 + px, 40 + py);
+  ctx.fillText(getRandomChar(), W/2 + 30 + px, 40 + py);
+}
+
+document.getElementById('start').addEventListener('click', start);
+window.addEventListener('resize', resize);
+</script>
+</body>
+</html>
